@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript build
+        run: npm run build
+
+  ai-review:
+    needs: [build]
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.actor == 'renovate[bot]' &&
+      !contains(github.event.pull_request.body, '**Automerge**: Enabled')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      # Pinned to v1.0.99 — v1.0.100+ has a regression where install.sh
+      # silently fails and the SDK can't fall back to its bundled binary.
+      # Unpin once anthropics/claude-code-action#1260 lands.
+      - uses: anthropics/claude-code-action@v1.0.99
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "renovate[bot]"
+          claude_args: "--model claude-sonnet-4-6 --max-turns 12 --disallowedTools Edit,Write,NotebookEdit,WebFetch,WebSearch,Glob,Grep --allowedTools 'Bash(gh:*)' Read"
+          prompt: |
+            You are reviewing a Renovate npm dependency update PR for a TypeScript service (Hono + MCP SDK + Qdrant client).
+
+            PR: #${{ github.event.pull_request.number }}
+
+            Workflow:
+            1. `gh pr view ${{ github.event.pull_request.number }}` — get title, body (Renovate writes release notes summary here)
+            2. `gh pr diff ${{ github.event.pull_request.number }}` — see exactly what changed (usually package.json + package-lock.json)
+            3. Read `package.json` and the affected source files (`src/index.ts`, `src/mcp.ts`, `src/ollama.ts`, `src/qdrant.ts`, `src/routes.ts`) to see how the package is used
+            4. If Renovate's body mentions breaking changes, deprecations, or removed APIs — verify whether our code uses any of them
+            5. For major version bumps, also check upstream release notes via `gh api repos/<owner>/<repo>/releases` if not already in the PR body
+
+            Evaluate:
+            - No breaking changes affecting APIs we call
+            - No removed/renamed exports we import
+            - No runtime behavior change that would break our service (Hono routing, MCP SDK transports, Qdrant client API)
+
+            Decision:
+            - SAFE: `gh pr review ${{ github.event.pull_request.number }} --approve -b "AI Review: <one-line summary of what was checked>"` then `gh pr merge ${{ github.event.pull_request.number }} --squash`
+            - CONCERNS: `gh pr comment ${{ github.event.pull_request.number }} -b "<detailed concerns>"` — do NOT approve or merge

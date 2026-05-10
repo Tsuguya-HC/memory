@@ -1,0 +1,31 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "platformAutomerge": false,
+  "packageRules": [
+    {
+      "description": "Automerge all devDependencies",
+      "matchDepTypes": ["devDependencies"],
+      "automerge": true
+    },
+    {
+      "description": "Automerge runtime patch/digest",
+      "matchUpdateTypes": ["patch", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Automerge minor for hono ecosystem (we follow upstream closely)",
+      "matchPackagePatterns": ["^@?hono(/.*)?$"],
+      "matchUpdateTypes": ["minor"],
+      "automerge": true
+    },
+    {
+      "description": "Pin claude-code-action until anthropics/claude-code-action#1260 lands (Issue #1242)",
+      "matchManagers": ["github-actions"],
+      "matchDepNames": ["anthropics/claude-code-action"],
+      "allowedVersions": "<=1.0.99"
+    }
+  ]
+}
