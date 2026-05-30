@@ -6,7 +6,16 @@
   ],
   "minimumReleaseAge": "3 days",
   "platformAutomerge": false,
+  "docker": {
+    "pinDigests": true
+  },
   "packageRules": [
+    {
+      "description": "Docker digest age gate is unenforceable (renovate#38656); digest-cooldown workflow gates instead",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["digest"],
+      "minimumReleaseAge": "0"
+    },
     {
       "description": "Automerge all devDependencies",
       "matchDepTypes": ["devDependencies"],
