@@ -5,6 +5,19 @@
     "helpers:pinGitHubActionDigests"
   ],
   "minimumReleaseAge": "3 days",
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "description": "A published CVE is a present risk; the cooldown exists to catch a hypothetical compromised release. Security updates therefore skip the age gate and the schedule.",
+    "minimumReleaseAge": null,
+    "schedule": ["at any time"],
+    "labels": ["security"]
+  },
+  "lockFileMaintenance": {
+    "description": "Most open alerts are transitive dependencies in package-lock.json, which no direct-dependency bump reaches. Automerged because the build job installs from the refreshed lock file and runs tsc against it.",
+    "enabled": true,
+    "schedule": ["before 6am on monday"],
+    "automerge": true
+  },
   "platformAutomerge": false,
   "docker": {
     "pinDigests": true
