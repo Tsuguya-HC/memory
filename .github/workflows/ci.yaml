@@ -57,13 +57,16 @@ jobs:
     needs: [build]
     if: >-
       github.event_name == 'pull_request' &&
-      github.actor == 'renovate[bot]' &&
+      github.event.pull_request.user.login == 'renovate[bot]' &&
       !contains(github.event.pull_request.body, '**Automerge**: Enabled')
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
       issues: write
+      # claude-code-action exchanges an OIDC token; without this the job fails
+      # with "Unable to get ACTIONS_ID_TOKEN_REQUEST_URL".
+      id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
