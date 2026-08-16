@@ -27,12 +27,6 @@
   },
   "packageRules": [
     {
-      "description": "Docker digest age gate is unenforceable (renovate#38656); digest-cooldown workflow gates instead",
-      "matchDatasources": ["docker"],
-      "matchUpdateTypes": ["digest", "pinDigest"],
-      "minimumReleaseAge": "0"
-    },
-    {
       "description": "Automerge all devDependencies",
       "matchDepTypes": ["devDependencies"],
       "automerge": true
