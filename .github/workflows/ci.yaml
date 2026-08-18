@@ -99,6 +99,8 @@ jobs:
             - No removed/renamed exports we import
             - No runtime behavior change that would break our service (Hono routing, MCP SDK transports, Qdrant client API)
 
+            Before any merge, run `gh pr checks ${{ github.event.pull_request.number }}` and look for a pending `renovate/stability-days`. That check is how minimumReleaseAge is enforced, and it stays pending until the cooldown has elapsed. Nothing else stops you from merging through it: the branch ruleset requires `CI Gate` only, and Renovate's own automerge gate does not apply to a merge you perform yourself. If it is pending, comment and stop — do not approve, do not merge.
+
             Decision:
             - SAFE: `gh pr review ${{ github.event.pull_request.number }} --approve -b "AI Review: <one-line summary of what was checked>"` then `gh pr merge ${{ github.event.pull_request.number }} --squash`
             - CONCERNS: `gh pr comment ${{ github.event.pull_request.number }} -b "<detailed concerns>"` — do NOT approve or merge
