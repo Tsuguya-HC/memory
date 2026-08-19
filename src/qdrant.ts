@@ -65,14 +65,14 @@ export async function searchMemories(
     filter.push({ key: "type", match: { value: options.type } });
   }
 
-  const results = await qdrant.search(COLLECTION, {
-    vector,
+  const { points } = await qdrant.query(COLLECTION, {
+    query: vector,
     limit: options.limit ?? 10,
     with_payload: true,
     filter: filter.length ? { must: filter } : undefined,
   });
 
-  return results.map((r) => ({
+  return points.map((r) => ({
     id: String(r.id),
     score: r.score,
     payload: r.payload as unknown as Memory,
