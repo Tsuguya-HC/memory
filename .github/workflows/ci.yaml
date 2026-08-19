@@ -54,13 +54,19 @@ jobs:
           done
 
   # Called by explicit ref rather than `./…`, which would resolve to this
-  # branch's copy. claude-code-action refuses to run when the workflow it is
-  # in differs from the default branch's version — a sane rule, since a PR
-  # could otherwise rewrite its own reviewer — but under `pull_request` a
-  # same-repo PR runs its own head's workflow file, so every branch cut before
-  # the last edit to this file failed that check, and an Actions bump (which
-  # edits this file by definition) could never pass it at all. Pinning @main
-  # means the reviewed content and the reviewing content are separate things.
+  # branch's copy. claude-code-action refuses to run when the workflow differs
+  # from the default branch's version — a sane rule, since a PR could
+  # otherwise rewrite its own reviewer — and under `pull_request` a same-repo
+  # PR runs its own head's copy, so a branch cut before the last edit here
+  # fails for reasons that have nothing to do with the change under review.
+  #
+  # The @main pin does not get around that: the check reads the entrypoint
+  # workflow, which is this file on the branch, so a PR that edits this file
+  # still fails it — measured on #25 and #27, which bump an action and a
+  # node-version and cannot be reviewed at all. What the pin does buy is that
+  # the reviewer's capabilities — token, tool allow-list, prompt — are read
+  # from main rather than from the branch, so editing them in a PR no longer
+  # changes what runs against that PR. Rebasing is what clears a stale branch.
   ai-review:
     needs: [build]
     if: >-
