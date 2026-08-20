@@ -1,5 +1,10 @@
 name: CI
 
+# The Claude reviewer used to be called from this file. It now has its own
+# entry point in claude-review.yml, because claude-code-action validates the
+# workflow that invoked it against main — and a PR that edits this file (every
+# Renovate action bump did) would otherwise be unreviewable.
+
 on:
   push:
     branches: [main]
@@ -26,8 +31,9 @@ jobs:
   # The only required status check. Aggregates every correctness leaf so the
   # ruleset never names an individual job: adding, renaming or matrix-splitting
   # a job below can't leave a required context that is never reported (which
-  # blocks the PR forever). ai-review is deliberately excluded — it is
-  # conditional and advisory, and it merges the PR itself.
+  # blocks the PR forever). The Claude reviewer is deliberately not part of it —
+  # it is advisory and conditional, and it waits on this gate rather than being
+  # gated by it.
   gate:
     name: CI Gate
     needs: [build]
@@ -52,33 +58,3 @@ jobs:
               *) echo "::error::A required job concluded with: ${r}"; exit 1 ;;
             esac
           done
-
-  # Called by explicit ref rather than `./…`, which would resolve to this
-  # branch's copy. claude-code-action refuses to run when the workflow differs
-  # from the default branch's version — a sane rule, since a PR could
-  # otherwise rewrite its own reviewer — and under `pull_request` a same-repo
-  # PR runs its own head's copy, so a branch cut before the last edit here
-  # fails for reasons that have nothing to do with the change under review.
-  #
-  # The @main pin does not get around that: the check reads the entrypoint
-  # workflow, which is this file on the branch, so a PR that edits this file
-  # still fails it — measured on #25 and #27, which bump an action and a
-  # node-version and cannot be reviewed at all. What the pin does buy is that
-  # the reviewer's capabilities — token, tool allow-list, prompt — are read
-  # from main rather than from the branch, so editing them in a PR no longer
-  # changes what runs against that PR. Rebasing is what clears a stale branch.
-  ai-review:
-    needs: [build]
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.user.login == 'renovate[bot]' &&
-      !contains(github.event.pull_request.body, '**Automerge**: Enabled')
-    uses: Tsuguya/memory/.github/workflows/ai-review.yaml@main
-    secrets: inherit
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-      # claude-code-action exchanges an OIDC token; without this the job fails
-      # with "Unable to get ACTIONS_ID_TOKEN_REQUEST_URL".
-      id-token: write
