@@ -1,0 +1,41 @@
+name: AI review
+
+# The entry point, and deliberately the one file on this path that never
+# changes.
+#
+# claude-code-action refuses to run when the workflow that invoked it differs
+# from the copy on the default branch — a sane rule, since a PR could otherwise
+# rewrite its own reviewer. Under `pull_request` a same-repo PR runs its own
+# head's copy, so whichever file carries the `on:` trigger cannot be edited by a
+# PR that still wants to be reviewed.
+#
+# The @main pin on the reusable body was never enough on its own: the check
+# reads the entry point, which used to be ci.yaml, so a PR editing ci.yaml
+# still failed it — measured on #25 and #27, which bump an action and a
+# node-version and could not be reviewed at all. Splitting the entry point out
+# is what fixes that, and only because nothing Renovate touches lives here.
+# Model, prompt, tool allow-list, action version and the check it waits on are
+# all in _claude-review.yml, read from main regardless of the PR branch.
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  ai-review:
+    # `@main` is the design, not an oversight. A SHA would have to be bumped on
+    # every change to the body, which puts this file back into Renovate's path
+    # and reintroduces the exact failure the split exists to remove.
+    uses: Tsuguya/memory/.github/workflows/_claude-review.yml@main # zizmor: ignore[unpinned-uses]
+    permissions:
+      contents: write # the reviewer merges the PR it approves
+      pull-requests: write # review, approve, comment
+      issues: write # PR conversation comments
+      id-token: write # claude-code-action exchanges an OIDC token
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

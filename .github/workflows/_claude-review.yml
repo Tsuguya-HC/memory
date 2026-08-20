@@ -1,15 +1,34 @@
-name: AI review
+name: AI review (reusable)
 
-# Reusable so the caller can pin it to @main. The gating — renovate[bot] only,
-# and not when Renovate will automerge it anyway — stays in the caller, which
-# is where the event is. Everything that decides what the reviewer may do
-# lives here, and here is always read from the default branch.
+# The reviewer itself. Called only from claude-review.yml, which pins this file
+# to @main — so everything below is read from the default branch regardless of
+# what the PR under review contains. The gating moved here from the caller too:
+# `github.event` is the same pull_request payload either way, and keeping it
+# here means a change to who gets reviewed does not touch the caller, which has
+# to stay byte-identical to main for claude-code-action to run at all.
+#
+# Renovate's action bumps land here. The caller stays frozen.
 on:
   workflow_call:
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        description: "Claude Code OAuth token used by claude-code-action"
+        required: true
+
+permissions: {}
 
 jobs:
   review:
+    # The caller job is already named "AI review"; a reusable check renders as
+    # "<caller job> / <callee job>", so keep this one short.
+    name: review
+    if: >-
+      github.event.pull_request.user.login == 'renovate[bot]' &&
+      !contains(github.event.pull_request.body, '**Automerge**: Enabled')
     runs-on: ubuntu-latest
+    # The wait below can idle for up to 20 minutes; this stops a hung review
+    # from holding a runner for the default six hours on top of that.
+    timeout-minutes: 40
     permissions:
       contents: write
       pull-requests: write
@@ -18,9 +37,49 @@ jobs:
       # with "Unable to get ACTIONS_ID_TOKEN_REQUEST_URL".
       id-token: write
     steps:
+      # Stands in for the `needs: [build]` the caller job had while it lived in
+      # ci.yaml. A separate workflow cannot depend on another one's jobs, and
+      # this reviewer approves and merges on its own, so it waits for the
+      # aggregate gate instead — which is also the check the branch ruleset
+      # requires.
+      - name: Wait for CI Gate
+        id: ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # `gh pr checks` exits non-zero whenever anything is pending or red,
+          # which is most of the loop — hence the `|| true` on the substitution.
+          for _ in $(seq 1 40); do
+            bucket=$(gh pr checks "$PR" --repo "$REPO" --json name,bucket \
+                       --jq '[.[] | select(.name == "CI Gate") | .bucket] | first // ""' \
+                     2>/dev/null || true)
+            case "${bucket}" in
+              pass)
+                echo "proceed=true" >> "$GITHUB_OUTPUT"
+                exit 0
+                ;;
+              ""|pending)
+                # "" also covers the window before the gate check exists at all
+                sleep 30
+                ;;
+              *)
+                echo "::notice::CI Gate concluded '${bucket}' — nothing to review."
+                echo "proceed=false" >> "$GITHUB_OUTPUT"
+                exit 0
+                ;;
+            esac
+          done
+          echo "::error::Timed out after 20 minutes waiting for CI Gate."
+          exit 1
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.ci.outputs.proceed == 'true'
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.ci.outputs.proceed == 'true'
         with:
           node-version: "24"
 
@@ -28,6 +87,7 @@ jobs:
       # silently fails and the SDK can't fall back to its bundled binary.
       # Unpin once anthropics/claude-code-action#1260 lands.
       - uses: anthropics/claude-code-action@c3d45e8e941e1b2ad7b278c57482d9c5bf1f35b3 # v1.0.99
+        if: steps.ci.outputs.proceed == 'true'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           allowed_bots: "renovate[bot]"
