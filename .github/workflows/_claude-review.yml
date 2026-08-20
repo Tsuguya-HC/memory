@@ -36,6 +36,9 @@ jobs:
       # claude-code-action exchanges an OIDC token; without this the job fails
       # with "Unable to get ACTIONS_ID_TOKEN_REQUEST_URL".
       id-token: write
+      checks: read # gh pr checks below reads the rollup through GraphQL, which
+      # returns "Resource not accessible by integration" for a check the token
+      # cannot see — and one unreadable check fails the whole query
     steps:
       # Stands in for the `needs: [build]` the caller job had while it lived in
       # ci.yaml. A separate workflow cannot depend on another one's jobs, and
