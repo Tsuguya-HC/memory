@@ -30,12 +30,11 @@ jobs:
     # from holding a runner for the default six hours on top of that.
     timeout-minutes: 40
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-      # claude-code-action exchanges an OIDC token; without this the job fails
-      # with "Unable to get ACTIONS_ID_TOKEN_REQUEST_URL".
-      id-token: write
+      contents: write # Claude commits and pushes review fixes
+      pull-requests: write # posts the review and merges when it approves
+      issues: write # writes the sticky progress comment
+      # without this the job fails with "Unable to get ACTIONS_ID_TOKEN_REQUEST_URL"
+      id-token: write # claude-code-action exchanges an OIDC token
       checks: read # gh pr checks below reads the rollup through GraphQL, which
       # returns "Resource not accessible by integration" for a check the token
       # cannot see — and one unreadable check fails the whole query
@@ -96,8 +95,15 @@ jobs:
           done
           echo "::error::Timed out after 20 minutes waiting for ${CHECK}."
           exit 1
+      # No credential left in .git/config: claude-code-action runs in agent mode
+      # (selected by passing a prompt), where configureGitAuth() runs first and
+      # unsets the header actions/checkout installs, then puts its own token in
+      # the remote URL. Restore this if it is ever switched to tag mode, where
+      # setupBranch() runs `git fetch` before the auth is configured.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.ci.outputs.proceed == 'true'
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         if: steps.ci.outputs.proceed == 'true'
