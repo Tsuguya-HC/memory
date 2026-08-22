@@ -3,8 +3,12 @@
 
   // No aqua preset: this repo has no aqua.yaml — its CI tooling is npm.
   "extends": [
-    "config:recommended",
-    "helpers:pinGitHubActionDigests"
+    // config:best-practices = config:recommended + docker:pinDigests
+    // + helpers:pinGitHubActionDigests + :configMigration + :pinDevDependencies
+    // + abandonments:recommended + security:minimumReleaseAgeNpm
+    // + :maintainLockFilesWeekly. The two presets listed separately before are
+    // both inside it now.
+    "config:best-practices"
   ],
 
   "minimumReleaseAge": "3 days",
@@ -80,13 +84,6 @@
       ],
       "matchUpdateTypes": ["lockFileMaintenance"],
       "minimumReleaseAge": "0"
-    },
-    {
-      // Written as a packageRule rather than a top-level `docker` block, which is
-      // the pre-migration spelling Renovate rewrites on sight.
-      "description": "Pin docker digests; the digest-cooldown workflow soaks them before merge",
-      "matchCategories": ["docker"],
-      "pinDigests": true
     },
     {
       "description": "Automerge all devDependencies",
