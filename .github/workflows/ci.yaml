@@ -11,11 +11,25 @@ on:
   pull_request:
     branches: [main]
 
+# Only the Claude reviewer needs to write, and it lives in its own workflow.
+# Everything here asks for what it needs, so a job added below starts with
+# nothing rather than inheriting the default token scope.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
+    name: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -28,12 +42,13 @@ jobs:
       - name: TypeScript build
         run: npm run build
 
-  # The only required status check. Aggregates every correctness leaf so the
-  # ruleset never names an individual job: adding, renaming or matrix-splitting
-  # a job below can't leave a required context that is never reported (which
-  # blocks the PR forever). The Claude reviewer is deliberately not part of it —
-  # it is advisory and conditional, and it waits on this gate rather than being
-  # gated by it.
+  # ワークフロー自身の検査。actionlint と zizmor のピンは home-actions 側にあり、
+  # ここは呼び先の SHA を追うだけ。aqua.yaml は要らない（共有ワークフローが
+  # AQUA_CONFIG で自分の _tooling/aqua.yaml を使う）。
+  lint-workflows:
+    uses: Tsuguya/home-actions/.github/workflows/lint-workflows.yml@10834ead7a2c2ca71677a6b818cd066d329eacbb # v1.2.0
+    permissions:
+      contents: read
 
   # Renovate 設定の検証。Renovate は知らないキーを黙って捨てるので（PR も警告も
   # 出ない）、バリデータだけがこの層の間違いを検出できる。home-cluster は
@@ -43,10 +58,19 @@ jobs:
     permissions:
       contents: read
 
+  # The only required status check. Aggregates every correctness leaf so the
+  # ruleset never names an individual job: adding, renaming or matrix-splitting
+  # a job below can't leave a required context that is never reported (which
+  # blocks the PR forever). The Claude reviewer is deliberately not part of it —
+  # it is advisory and conditional, and it waits on this gate rather than being
+  # gated by it.
   gate:
     name: CI Gate
-    needs: [build, lint-renovate]
-    if: ${{ always() }}
+    needs: [build, lint-workflows, lint-renovate]
+    # `!cancelled()` rather than `always()`: under always(), cancelling a run
+    # leaves every leaf reporting `cancelled`, which falls through the case
+    # below and records the required check as a failure.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions: {}
     steps:
