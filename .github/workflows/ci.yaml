@@ -4,12 +4,34 @@ name: CI
 # entry point in claude-review.yml, because claude-code-action validates the
 # workflow that invoked it against main — and a PR that edits this file (every
 # Renovate action bump did) would otherwise be unreviewable.
+#
+# 必須ステータスチェックを単一 gate に集約するオーケストレーター。
+# 各検査は workflow_call の leaf にあり、ここはそれを組み立てるだけ。
+#
+# トリガーに paths フィルタは付けない。leaf をトリガー側で絞ると、該当しない
+# PR ではチェックが報告されず、必須化された context が
+# "Expected — Waiting for status to be reported" のまま永久にブロックする。
+# 代わりに起動は常にして、`detect` が leaf ごとの実行要否を出す。skip した
+# leaf は gate から見て `skipped` = 合格扱いになるので、報告は常に発生する。
+#
+# push トリガーは持たない。main の ruleset は `pull_request` を要求していて
+# 直 push は通らないので、main が進むのはマージのときだけ ——「その内容は
+# 直前に PR でこの CI を通っている」。
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+    # `edited` on top of the default opened/synchronize/reopened. Changing a
+    # PR's base is an `edited` activity, so a PR opened against another branch
+    # and later retargeted at main never matched `branches:` and never produced
+    # a CI Gate check at all — the required context stays "Expected — Waiting
+    # for status to be reported" and the PR cannot merge until someone pushes
+    # to it.
+    #
+    # detect を入れたことで塞ぐものが 1 つ増えた。retarget では head SHA が
+    # 変わらないので、`edited` が無いと旧 base で計算した detect の結果
+    # （= leaf を skip した緑）がそのまま新 base の必須チェックに流用できる。
+    types: [opened, synchronize, reopened, edited]
 
 # Only the Claude reviewer needs to write, and it lives in its own workflow.
 # Everything here asks for what it needs, so a job added below starts with
@@ -17,35 +39,65 @@ on:
 permissions: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.number }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    name: build
-    runs-on: ubuntu-latest
+  # 変更ファイル種別を判定し、各 leaf を実行すべきかを outputs で返す。
+  # merge-base 等のエッジケースを正しく扱うため dorny/paths-filter を使う。
+  #
+  # leaf 自身のワークフローファイルも各フィルタに入れてある（自己参照）。leaf の
+  # 中身を変えた PR がその leaf を走らせないのでは検証にならない。
+  detect:
+    name: detect changes
+    # checkout と paths-filter しか動かないので slim で足りる。ツールを要求
+    # するのは leaf 側で、そちらは ubuntu-latest のまま。
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
     permissions:
-      contents: read # checkout
+      contents: read
+      pull-requests: read # dorny/paths-filter が PR の変更ファイル一覧を API 取得するために必要
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+      renovate: ${{ steps.filter.outputs.renovate }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
         with:
-          node-version: "24"
-          cache: npm
+          filters: |
+            # Dockerfile も含める。イメージの node がずれれば、ここで解決した
+            # lock file が向こうで同じに解決する保証がなくなる。
+            app:
+              - 'src/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig.json'
+              - 'Dockerfile'
+              - '.github/workflows/_build.yml'
+            workflows:
+              - '.github/workflows/**'
+              - '.github/zizmor.yml'
+            renovate:
+              - 'renovate.json*'
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: TypeScript build
-        run: npm run build
+  build:
+    needs: detect
+    if: ${{ needs.detect.outputs.app == 'true' }}
+    uses: ./.github/workflows/_build.yml
+    permissions:
+      contents: read
 
   # ワークフロー自身の検査。actionlint と zizmor のピンは home-actions 側にあり、
   # ここは呼び先の SHA を追うだけ。aqua.yaml は要らない（共有ワークフローが
   # AQUA_CONFIG で自分の _tooling/aqua.yaml を使う）。
   lint-workflows:
+    needs: detect
+    if: ${{ needs.detect.outputs.workflows == 'true' }}
     uses: Tsuguya/home-actions/.github/workflows/lint-workflows.yml@10834ead7a2c2ca71677a6b818cd066d329eacbb # v1.2.0
     permissions:
       contents: read
@@ -54,6 +106,8 @@ jobs:
   # 出ない）、バリデータだけがこの層の間違いを検出できる。home-cluster は
   # `ignoredAuthors` の綴り違いを 5 週間放置していた。
   lint-renovate:
+    needs: detect
+    if: ${{ needs.detect.outputs.renovate == 'true' }}
     uses: Tsuguya/home-actions/.github/workflows/lint-renovate.yml@10834ead7a2c2ca71677a6b818cd066d329eacbb # v1.2.0
     permissions:
       contents: read
@@ -64,14 +118,20 @@ jobs:
   # blocks the PR forever). The Claude reviewer is deliberately not part of it —
   # it is advisory and conditional, and it waits on this gate rather than being
   # gated by it.
+  #
+  # `detect` も needs に含める。detect が失敗すると全 leaf の `if` が偽になって
+  # skip され、skip は合格扱いなので、detect を見ていないと「何も検査していない
+  # 緑」が必須チェックを満たしてしまう。
   gate:
     name: CI Gate
-    needs: [build, lint-workflows, lint-renovate]
+    needs: [detect, build, lint-workflows, lint-renovate]
     # `!cancelled()` rather than `always()`: under always(), cancelling a run
     # leaves every leaf reporting `cancelled`, which falls through the case
     # below and records the required check as a failure.
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    # 集計は bash の for ループだけなので slim で足りる。
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
     permissions: {}
     steps:
       - name: Aggregate results
@@ -91,3 +151,4 @@ jobs:
               *) echo "::error::A required job concluded with: ${r}"; exit 1 ;;
             esac
           done
+          echo "All required jobs passed or were correctly skipped."
