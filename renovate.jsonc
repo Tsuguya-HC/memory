@@ -67,7 +67,7 @@
         "our own reusable workflow only delays fixes to the thing that gates every",
         "other check."
       ],
-      "matchPackageNames": ["Tsuguya/**"],
+      "matchPackageNames": ["Tsuguya-HC/**"],
       "minimumReleaseAge": "0"
     },
     {
@@ -123,7 +123,7 @@
         "change to the reusable body — exactly the failure the split removes."
       ],
       "matchManagers": ["github-actions"],
-      "matchDepNames": ["Tsuguya/memory"],
+      "matchDepNames": ["Tsuguya-HC/memory"],
       "enabled": false
     }
   ]
