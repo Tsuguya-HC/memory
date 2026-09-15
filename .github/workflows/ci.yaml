@@ -1,9 +1,8 @@
 name: CI
 
-# The Claude reviewer used to be called from this file. It now has its own
-# entry point in claude-review.yml, because claude-code-action validates the
-# workflow that invoked it against main — and a PR that edits this file (every
-# Renovate action bump did) would otherwise be unreviewable.
+# レビューは Actions から離れ、クラスタ側の pr-review flow が PR の webhook で
+# 起きる（home-cluster の manifests/argo/pr-review-sensor.yaml）。このリポジトリに
+# Claude を呼ぶジョブは無く、OAuth トークンの secret も置かない。
 #
 # 必須ステータスチェックを単一 gate に集約するオーケストレーター。
 # 各検査は workflow_call の leaf にあり、ここはそれを組み立てるだけ。
