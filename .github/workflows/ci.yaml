@@ -36,9 +36,9 @@ on:
   # detect の dorny/paths-filter は merge_group を base_sha..head_sha で解釈する。
   merge_group:
 
-# Only the Claude reviewer needs to write, and it lives in its own workflow.
-# Everything here asks for what it needs, so a job added below starts with
-# nothing rather than inheriting the default token scope.
+# No job here needs to write. Everything asks for what it needs, so a job
+# added below starts with nothing rather than inheriting the default token
+# scope.
 permissions: {}
 
 concurrency:
@@ -135,9 +135,7 @@ jobs:
   # The only required status check. Aggregates every correctness leaf so the
   # ruleset never names an individual job: adding, renaming or matrix-splitting
   # a job below can't leave a required context that is never reported (which
-  # blocks the PR forever). The Claude reviewer is deliberately not part of it —
-  # it is advisory and conditional, and it waits on this gate rather than being
-  # gated by it.
+  # blocks the PR forever).
   #
   # `detect` も needs に含める。detect が失敗すると全 leaf の `if` が偽になって
   # skip され、skip は合格扱いなので、detect を見ていないと「何も検査していない
