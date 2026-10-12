@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import crypto from "node:crypto";
 import { embed } from "./ollama.js";
 import {
@@ -13,16 +13,46 @@ import { healthCheck as ollamaHealth } from "./ollama.js";
 
 const app = new Hono();
 
+// 入力の検査。型が合わない値をそのまま Qdrant に渡すと、保存されてしまうか
+// （text が数値・tags が文字列）、Qdrant に弾かれて 500 になる（limit が小数）。
+
+async function readObject(c: Context): Promise<Record<string, unknown> | null> {
+  try {
+    const body: unknown = await c.req.json();
+    return body !== null && typeof body === "object" && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+const isOptionalString = (v: unknown): v is string | undefined =>
+  v === undefined || typeof v === "string";
+
+const isOptionalStringArray = (v: unknown): v is string[] | undefined =>
+  v === undefined || (Array.isArray(v) && v.every((t) => typeof t === "string"));
+
+const isOptionalLimit = (v: unknown): v is number | undefined =>
+  v === undefined || (Number.isInteger(v) && (v as number) > 0);
+
 app.post("/memories", async (c) => {
-  const body = await c.req.json<{
-    text: string;
-    tags?: string[];
-    type?: string;
-    source?: string;
-  }>();
+  const body = await readObject(c);
+  if (!body) {
+    return c.json({ error: "body must be a JSON object" }, 400);
+  }
 
   if (!body.text) {
     return c.json({ error: "text is required" }, 400);
+  }
+  if (typeof body.text !== "string") {
+    return c.json({ error: "text must be a string" }, 400);
+  }
+  if (!isOptionalStringArray(body.tags)) {
+    return c.json({ error: "tags must be an array of strings" }, 400);
+  }
+  if (!isOptionalString(body.type) || !isOptionalString(body.source)) {
+    return c.json({ error: "type and source must be strings" }, 400);
   }
 
   const id = crypto.randomUUID();
@@ -40,15 +70,25 @@ app.post("/memories", async (c) => {
 });
 
 app.post("/memories/search", async (c) => {
-  const body = await c.req.json<{
-    query: string;
-    tags?: string[];
-    type?: string;
-    limit?: number;
-  }>();
+  const body = await readObject(c);
+  if (!body) {
+    return c.json({ error: "body must be a JSON object" }, 400);
+  }
 
   if (!body.query) {
     return c.json({ error: "query is required" }, 400);
+  }
+  if (typeof body.query !== "string") {
+    return c.json({ error: "query must be a string" }, 400);
+  }
+  if (!isOptionalStringArray(body.tags)) {
+    return c.json({ error: "tags must be an array of strings" }, 400);
+  }
+  if (!isOptionalString(body.type)) {
+    return c.json({ error: "type must be a string" }, 400);
+  }
+  if (!isOptionalLimit(body.limit)) {
+    return c.json({ error: "limit must be a positive integer" }, 400);
   }
 
   const vector = await embed(body.query);
@@ -65,6 +105,9 @@ app.get("/memories", async (c) => {
   const tags = c.req.query("tags")?.split(",").filter(Boolean);
   const type = c.req.query("type");
   const limit = c.req.query("limit") ? Number(c.req.query("limit")) : undefined;
+  if (!isOptionalLimit(limit)) {
+    return c.json({ error: "limit must be a positive integer" }, 400);
+  }
 
   const results = await listMemories({ tags, type: type ?? undefined, limit });
   return c.json(results);
