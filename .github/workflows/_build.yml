@@ -1,6 +1,7 @@
 name: build
 
-# TypeScript のビルド leaf。lock file が解決することと、tsc が通ることを見る。
+# TypeScript のビルド leaf。lock file が解決することと、tsc が通ること、
+# test/ のテストが通ることを見る。
 #
 # オーケストレーターは ci.yaml で、必須チェックはそこの `CI Gate` 1 個だけ。
 # 直接のトリガーは持たない — leaf 自身が pull_request で起動すると、同じ
@@ -32,3 +33,7 @@ jobs:
 
       - name: TypeScript build
         run: npm run build
+
+      # Qdrant / Ollama はスタブで置き換えるので、サービスコンテナは要らない。
+      - name: Test
+        run: npm test
