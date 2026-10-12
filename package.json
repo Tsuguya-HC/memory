@@ -6,7 +6,8 @@
     "dev": "tsx watch src/index.ts",
     "mcp": "tsx src/mcp.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "node --import tsx --test \"test/**/*.test.ts\""
   },
   "dependencies": {
     "@hono/node-server": "^2.0.0",
