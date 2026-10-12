@@ -75,7 +75,8 @@ jobs:
         with:
           filters: |
             # Dockerfile も含める。イメージの node がずれれば、ここで解決した
-            # lock file が向こうで同じに解決する保証がなくなる。
+            # lock file が向こうで同じに解決する保証がなくなる。イメージ自体は
+            # image leaf が組んで確かめる。
             app:
               - 'src/**'
               - 'package.json'
@@ -83,6 +84,7 @@ jobs:
               - 'tsconfig.json'
               - 'Dockerfile'
               - '.github/workflows/_build.yml'
+              - '.github/workflows/_image.yml'
             workflows:
               - '.github/workflows/**'
               - '.github/zizmor.yml'
@@ -99,6 +101,14 @@ jobs:
     # 呼び出しには当たらない — GitHub が同じ commit から解決し FS を見ない。
     # ignore は行単位。ステップの `uses: ./my-action` は今も検出される。
     uses: ./.github/workflows/_build.yml # zizmor: ignore[self-repository]
+    permissions:
+      contents: read
+
+  image:
+    needs: detect
+    if: ${{ needs.detect.outputs.app == 'true' }}
+    # zizmor の self-repository を無視する理由は build と同じ。
+    uses: ./.github/workflows/_image.yml # zizmor: ignore[self-repository]
     permissions:
       contents: read
 
@@ -134,7 +144,7 @@ jobs:
   # 緑」が必須チェックを満たしてしまう。
   gate:
     name: CI Gate
-    needs: [detect, build, lint-workflows, lint-renovate]
+    needs: [detect, build, image, lint-workflows, lint-renovate]
     # `!cancelled()` rather than `always()`: under always(), cancelling a run
     # leaves every leaf reporting `cancelled`, which falls through the case
     # below and records the required check as a failure.

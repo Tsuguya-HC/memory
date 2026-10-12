@@ -1,0 +1,45 @@
+name: image
+
+# コンテナイメージのビルド leaf。Dockerfile が通ることと、出来たイメージが
+# 動く形になっていることを見る。push はしない。
+#
+# build leaf（_build.yml）はホストの node で devDependencies 込みの tsc を
+# 通すだけなので、次のどちらも素通りする。Renovate は Dockerfile の node の
+# ダイジェスト更新を automerge するので、ここで見ないとクラスタで初めて分かる。
+# - イメージのビルド自体が壊れる（ベースイメージ・npm ci・COPY の変化）
+# - 実行時に要る依存が devDependencies にあって `npm ci --omit=dev` で落ちる
+#
+# 直接のトリガーは持たない（_build.yml と同じ理由）。オーケストレーターは ci.yaml。
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # checkout
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        run: docker build --tag memory:ci .
+
+      # Dockerfile の USER を落とすと root で動く。
+      - name: Runs as the non-root user
+        run: |
+          set -euo pipefail
+          uid="$(docker run --rm --entrypoint id memory:ci -u)"
+          echo "uid: ${uid}"
+          test "${uid}" = 65532
+
+      # index.js は起動時に Qdrant へ繋ぎに行くので、routes.js までを読み込んで
+      # 実行時の依存が揃っていることを見る。Qdrant クライアントのバージョン確認は
+      # ネットワークが無いので失敗するが、警告を出すだけで終了コードには響かない。
+      - name: Runtime dependencies resolve
+        run: docker run --rm --network none --entrypoint node memory:ci -e "await import('./dist/routes.js')"
