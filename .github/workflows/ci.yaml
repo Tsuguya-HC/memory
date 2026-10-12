@@ -78,6 +78,7 @@ jobs:
             # lock file が向こうで同じに解決する保証がなくなる。
             app:
               - 'src/**'
+              - 'test/**'
               - 'package.json'
               - 'package-lock.json'
               - 'tsconfig.json'
