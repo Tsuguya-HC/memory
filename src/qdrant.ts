@@ -6,6 +6,15 @@ const VECTOR_SIZE = 768;
 
 export const qdrant = new QdrantClient({ url: QDRANT_URL });
 
+// created_at は listMemories の order_by に使う。Qdrant は order_by のキーに
+// 範囲インデックスを要求し、無いと scroll が 400 になる。
+const PAYLOAD_INDEXES = [
+  { field_name: "tags", field_schema: "keyword" },
+  { field_name: "type", field_schema: "keyword" },
+  { field_name: "source", field_schema: "keyword" },
+  { field_name: "created_at", field_schema: "datetime" },
+] as const;
+
 export async function ensureCollection(): Promise<void> {
   const collections = await qdrant.getCollections();
   const exists = collections.collections.some((c) => c.name === COLLECTION);
@@ -13,18 +22,11 @@ export async function ensureCollection(): Promise<void> {
     await qdrant.createCollection(COLLECTION, {
       vectors: { size: VECTOR_SIZE, distance: "Cosine" },
     });
-    await qdrant.createPayloadIndex(COLLECTION, {
-      field_name: "tags",
-      field_schema: "keyword",
-    });
-    await qdrant.createPayloadIndex(COLLECTION, {
-      field_name: "type",
-      field_schema: "keyword",
-    });
-    await qdrant.createPayloadIndex(COLLECTION, {
-      field_name: "source",
-      field_schema: "keyword",
-    });
+  }
+  // 既存のコレクションにも毎回作る。後から足したインデックスを既存のデータに
+  // 行き渡らせるためで、作成済みのインデックスに対しては Qdrant 側で冪等。
+  for (const index of PAYLOAD_INDEXES) {
+    await qdrant.createPayloadIndex(COLLECTION, { ...index, wait: true });
   }
 }
 
