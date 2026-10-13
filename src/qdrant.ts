@@ -84,13 +84,18 @@ export async function searchMemories(
 export async function getMemory(
   id: string
 ): Promise<{ id: string; payload: Memory } | null> {
+  let points;
   try {
-    const points = await qdrant.retrieve(COLLECTION, { ids: [id], with_payload: true });
-    if (!points.length) return null;
-    return { id: String(points[0].id), payload: points[0].payload as unknown as Memory };
-  } catch {
-    return null;
+    points = await qdrant.retrieve(COLLECTION, { ids: [id], with_payload: true });
+  } catch (err) {
+    // UUID でも整数でもない id は Qdrant が 400 で弾く。そういう id の記憶は
+    // 存在しないので null にする。接続できない・5xx などの障害は 404 に
+    // 化けさせず、呼び出し元へそのまま投げる。
+    if ((err as { status?: unknown }).status === 400) return null;
+    throw err;
   }
+  if (!points.length) return null;
+  return { id: String(points[0].id), payload: points[0].payload as unknown as Memory };
 }
 
 export async function deleteMemory(id: string): Promise<void> {
